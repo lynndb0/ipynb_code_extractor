@@ -46,9 +46,6 @@ fn main() {
         }
     };
 
-    // Regex to match magic commands (%something) and shell commands (!something)
-    let magic_re = Regex::new(r"^\s*(%|!).*").unwrap();
-
     // Create output file
     let mut output_file = match fs::File::create(output_path) {
         Ok(file) => file,
@@ -62,10 +59,10 @@ fn main() {
     for (idx, cell) in notebook.cells.iter().enumerate() {
         if cell.cell_type == "code" {
             writeln!(output_file, "# --- Cell {} ---", idx + 1).unwrap();
-            for line in &cell.source {
-                // Skip magic and shell commands
-                if !magic_re.is_match(line) {
-                    write!(output_file, "{}", line).unwrap();
+            for line in cell.source.lines() {
+                if let Err(e) = write_cell_line(&mut output_file, &line) {
+                    eprintln!("Error writing extracted output: {}", e);
+                    process::exit(1);
                 }
             }
             writeln!(output_file, "\n").unwrap();
