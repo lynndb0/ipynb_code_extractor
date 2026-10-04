@@ -1,0 +1,76 @@
+use serde::Deserialize;
+use std::env;
+use std::fs;
+use std::process;
+use std::io::Write;
+use regex::Regex;
+
+// Structs to match the notebook JSON structure
+#[derive(Debug, Deserialize)]
+struct Notebook {
+    cells: Vec<Cell>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Cell {
+    cell_type: String,
+    source: Vec<String>,
+}
+
+fn main() {
+    // Expect two arguments: input.ipynb output.py
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 3 {
+        eprintln!("Usage: {} <notebook.ipynb> <output.py>", args[0]);
+        process::exit(1);
+    }
+
+    let input_path = &args[1];
+    let output_path = &args[2];
+
+    // Read the notebook file
+    let data = match fs::read_to_string(input_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading file {}: {}", input_path, e);
+            process::exit(1);
+        }
+    };
+
+    // Parse JSON into our structs
+    let notebook: Notebook = match serde_json::from_str(&data) {
+        Ok(nb) => nb,
+        Err(e) => {
+            eprintln!("Error parsing JSON: {}", e);
+            process::exit(1);
+        }
+    };
+
+    // Regex to match magic commands (%something) and shell commands (!something)
+    let magic_re = Regex::new(r"^\s*(%|!).*").unwrap();
+
+    // Create output file
+    let mut output_file = match fs::File::create(output_path) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Error creating file {}: {}", output_path, e);
+            process::exit(1);
+        }
+    };
+
+    // Extract and write Python code cells
+    for (idx, cell) in notebook.cells.iter().enumerate() {
+        if cell.cell_type == "code" {
+            writeln!(output_file, "# --- Cell {} ---", idx + 1).unwrap();
+            for line in &cell.source {
+                // Skip magic and shell commands
+                if !magic_re.is_match(line) {
+                    write!(output_file, "{}", line).unwrap();
+                }
+            }
+            writeln!(output_file, "\n").unwrap();
+        }
+    }
+
+    println!("Extracted Python code saved to {}", output_path);
+}
